@@ -442,14 +442,85 @@
         .mobile-menu-btn {
             display: none;
         }
+
+        body.auth-required > :not(#authGate) {
+            display: none !important;
+        }
+
+        .auth-gate {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 1.5rem;
+            background: #f5f6fa;
+        }
+
+        .auth-gate[hidden] {
+            display: none;
+        }
+
+        .auth-panel {
+            width: min(100%, 420px);
+            padding: 2rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+        }
+
+        .auth-panel h1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .auth-panel p {
+            margin-bottom: 1rem;
+            color: #666;
+        }
+
+        .auth-panel label {
+            display: block;
+            margin: 1rem 0 0.35rem;
+            font-weight: 600;
+        }
+
+        .auth-panel input {
+            width: 100%;
+            padding: 0.7rem;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+
+        .auth-panel .btn {
+            margin-top: 1rem;
+        }
+
+        #authMessage,
+        #transcriptStatus {
+            min-height: 1.5em;
+        }
     </style>
 </head>
 <body>
+    <div class="auth-gate" id="authGate" hidden>
+        <section class="auth-panel" aria-labelledby="authHeading">
+            <h1 id="authHeading">VoiceTranslate</h1>
+            <p>Sign in to save and view your transcripts.</p>
+            <form id="authForm">
+                <label for="authEmail">Email</label>
+                <input id="authEmail" type="email" autocomplete="email" required>
+                <label for="authPassword">Password</label>
+                <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required>
+                <button class="btn btn-primary" id="authSubmitButton" type="submit">Sign in</button>
+            </form>
+            <p id="authMessage" aria-live="polite"></p>
+            <button class="btn btn-secondary" id="authModeToggle" type="button">Create an account</button>
+        </section>
+    </div>
+
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">🎙️ VoiceTranslate</div>
-            <div class="user-info">green@company.com</div>
+            <div class="user-info" id="currentUser"></div>
         </div>
         <ul class="sidebar-nav">
             <li><a href="#" class="nav-link active" data-page="dashboard">
@@ -490,6 +561,7 @@
             <div class="header-actions">
                 <span>🟢 Active</span>
                 <span>Credits: 2,450</span>
+                <button class="btn btn-secondary" id="signOutButton" type="button">Sign out</button>
                 <a href="#" class="btn btn-primary" onclick="showPage('translate')">
                     <span>🎤</span> Start Translation
                 </a>
@@ -667,7 +739,7 @@
                     <div class="translation-panel">
                         <h3>🎤 Source Language</h3>
                         <div class="language-selector">
-                            <select id="targetLanguage">
+                            <select id="sourceLanguage">
                                 <option value="es">Spanish</option>
                                 <option value="en">English</option>
                                 <option value="fr">French</option>
@@ -740,6 +812,7 @@
                             <button class="btn btn-primary">🔍 Search</button>
                         </div>
                     </div>
+                    <p id="transcriptStatus" role="status" aria-live="polite"></p>
                     <table>
                         <thead>
                             <tr>
@@ -750,38 +823,7 @@
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <tr>
-                                <td>Q4 Planning Meeting</td>
-                                <td>EN → ES</td>
-                                <td>45 min</td>
-                                <td>Dec 15, 2024</td>
-                                <td>
-                                    <button class="btn btn-secondary">👁️ View</button>
-                                    <button class="btn btn-secondary">📄 Export</button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>Client Presentation</td>
-                                <td>FR → EN</td>
-                                <td>32 min</td>
-                                <td>Dec 14, 2024</td>
-                                <td>
-                                    <button class="btn btn-secondary">👁️ View</button>
-                                    <button class="btn btn-secondary">📄 Export</button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>Product Interview</td>
-                                <td>JA → EN</td>
-                                <td>28 min</td>
-                                <td>Dec 13, 2024</td>
-                                <td>
-                                    <button class="btn btn-secondary">👁️ View</button>
-                                    <button class="btn btn-secondary">📄 Export</button>
-                                </td>
-                            </tr>
-                        </tbody>
+                        <tbody id="transcriptsTableBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -1297,7 +1339,35 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
     <script>
+        const supabaseClient = window.supabase.createClient(
+            'https://mgbbqxhcvetalunfwiii.supabase.co',
+            'sb_publishable_7BMFgk6A-giA5etiK7xLHA_lO913fW5'
+        );
+        let currentUser = null;
+        let authMode = 'signin';
+
+        document.body.classList.add('auth-required');
+
+        function setAuthMessage(message) {
+            document.getElementById('authMessage').textContent = message;
+        }
+
+        function updateAuthState(event, session) {
+            currentUser = session?.user ?? null;
+            const signedIn = Boolean(currentUser);
+            document.body.classList.toggle('auth-required', !signedIn);
+            document.getElementById('authGate').hidden = signedIn;
+            document.getElementById('currentUser').textContent = currentUser?.email ?? '';
+
+            if (signedIn && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+                window.setTimeout(loadTranscripts, 0);
+            }
+        }
+
+        supabaseClient.auth.onAuthStateChange(updateAuthState);
+
         // Navigation
         function showPage(pageId) {
             // Hide all pages
@@ -1408,8 +1478,86 @@
             alert('🔊 Playing translated audio...');
         }
 
-        function saveTranscript() {
-            alert('💾 Transcript saved successfully!');
+        async function saveTranscript() {
+            if (!currentUser) {
+                setAuthMessage('Sign in before saving a transcript.');
+                return;
+            }
+
+            const sourceText = document.getElementById('sourceTranscript').innerText.trim();
+            const targetText = document.getElementById('targetTranscript').innerText.trim();
+            if (!sourceText || sourceText.startsWith('Click the microphone') ||
+                !targetText || targetText.startsWith('Translation will appear')) {
+                alert('Record a translation before saving.');
+                return;
+            }
+
+            const { error } = await supabaseClient.from('transcripts').insert({
+                user_id: currentUser.id,
+                title: `Transcript ${new Date().toLocaleString()}`,
+                source_language: document.getElementById('sourceLanguage').value,
+                target_language: document.getElementById('targetLanguage').value,
+                source_text: sourceText,
+                target_text: targetText
+            });
+
+            if (error) {
+                alert(`Could not save transcript: ${error.message}`);
+                return;
+            }
+
+            await loadTranscripts();
+            alert('Transcript saved.');
+        }
+
+        async function loadTranscripts() {
+            const status = document.getElementById('transcriptStatus');
+            const { data, error } = await supabaseClient
+                .from('transcripts')
+                .select('id,title,source_language,target_language,duration_seconds,created_at,source_text,target_text')
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            if (error) {
+                status.textContent = `Could not load transcripts: ${error.message}`;
+                return;
+            }
+
+            status.textContent = '';
+            const tableBody = document.getElementById('transcriptsTableBody');
+            tableBody.replaceChildren();
+
+            if (!data.length) {
+                const row = tableBody.insertRow();
+                const cell = row.insertCell();
+                cell.colSpan = 5;
+                cell.textContent = 'No transcripts saved yet.';
+                return;
+            }
+
+            data.forEach(transcript => {
+                const row = tableBody.insertRow();
+                [
+                    transcript.title,
+                    `${transcript.source_language.toUpperCase()} → ${transcript.target_language.toUpperCase()}`,
+                    `${Math.ceil(transcript.duration_seconds / 60)} min`,
+                    new Date(transcript.created_at).toLocaleDateString()
+                ].forEach(value => {
+                    row.insertCell().textContent = value;
+                });
+
+                const actionsCell = row.insertCell();
+                const viewButton = document.createElement('button');
+                viewButton.className = 'btn btn-secondary';
+                viewButton.type = 'button';
+                viewButton.textContent = 'View';
+                viewButton.addEventListener('click', () => {
+                    document.getElementById('sourceTranscript').textContent = transcript.source_text;
+                    document.getElementById('targetTranscript').textContent = transcript.target_text;
+                    showPage('translate');
+                });
+                actionsCell.append(viewButton);
+            });
         }
 
         function shareSession() {
@@ -1428,6 +1576,58 @@
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('authForm').addEventListener('submit', async event => {
+                event.preventDefault();
+                const email = document.getElementById('authEmail').value.trim();
+                const password = document.getElementById('authPassword').value;
+                const submitButton = document.getElementById('authSubmitButton');
+                submitButton.disabled = true;
+                setAuthMessage('');
+
+                try {
+                    if (authMode === 'signup') {
+                        const { data, error } = await supabaseClient.auth.signUp({
+                            email,
+                            password,
+                            options: { emailRedirectTo: window.location.href.split(/[?#]/)[0] }
+                        });
+                        if (error) throw error;
+                        if (!data.session) {
+                            setAuthMessage('Check your email to confirm your account, then sign in.');
+                        }
+                    } else {
+                        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                        if (error) throw error;
+                    }
+                } catch (error) {
+                    setAuthMessage(error.message);
+                } finally {
+                    submitButton.disabled = false;
+                }
+            });
+
+            document.getElementById('authModeToggle').addEventListener('click', event => {
+                authMode = authMode === 'signin' ? 'signup' : 'signin';
+                document.getElementById('authHeading').textContent = authMode === 'signup' ? 'Create account' : 'VoiceTranslate';
+                document.getElementById('authSubmitButton').textContent = authMode === 'signup' ? 'Create account' : 'Sign in';
+                event.currentTarget.textContent = authMode === 'signup' ? 'Back to sign in' : 'Create an account';
+                document.getElementById('authPassword').autocomplete = authMode === 'signup' ? 'new-password' : 'current-password';
+                setAuthMessage('');
+            });
+
+            document.getElementById('signOutButton').addEventListener('click', async () => {
+                const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
+                if (error) alert(`Could not sign out: ${error.message}`);
+            });
+
+            const transcriptSearch = document.querySelector('#transcripts input[type="search"]');
+            transcriptSearch.addEventListener('input', () => {
+                const query = transcriptSearch.value.trim().toLowerCase();
+                document.querySelectorAll('#transcriptsTableBody tr').forEach(row => {
+                    row.hidden = !row.textContent.toLowerCase().includes(query);
+                });
+            });
+
             // Add some interactive elements
             const statCards = document.querySelectorAll('.stat-card');
             statCards.forEach(card => {
